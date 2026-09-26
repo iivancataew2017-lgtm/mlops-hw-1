@@ -1,0 +1,8 @@
+transaction_time,amount,lat,lon,merchant_lat,merchant_lon,population_city,gender,merch,cat_id,one_city,us_state,jobs
+2026-09-20 12:15:00,42.50,55.7558,37.6173,55.7600,37.6200,13000000,F,coffee_shop,food,1,MOW,engineer
+2026-09-20 03:20:00,12500.00,55.7558,37.6173,59.9343,30.3351,13000000,M,electronics,shopping,0,MOW,manager
+2026-09-21 18:45:00,350.00,59.9343,30.3351,59.9400,30.3300,5600000,F,grocery,food,1,SPE,teacher
+2026-09-22 00:10:00,89000.00,43.1155,131.8855,55.7558,37.6173,600000,M,jewelry,luxury,0,PRI,driver
+2026-09-23 09:05:00,1200.00,56.8389,60.6057,56.8400,60.6100,1500000,F,pharmacy,health,1,SVE,doctor
+2026-09-24 23:55:00,25000.00,54.7104,20.4522,45.0355,38.9753,500000,M,travel_agency,travel,0,KGD,analyst
+

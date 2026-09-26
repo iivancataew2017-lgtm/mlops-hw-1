@@ -1,0 +1,109 @@
+name: fraud-scoring
+
+services:
+  kafka:
+    image: redpandadata/redpanda:v24.1.20
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=0.0.0.0:9092
+      - --advertise-kafka-addr=kafka:9092
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health -X brokers=localhost:9092 | grep -q 'Healthy:.*true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    networks: [ml-scorer]
+
+  kafka-setup:
+    image: redpandadata/redpanda:v24.1.20
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        existing=$$(rpk topic list -X brokers=kafka:9092)
+        for topic in transactions scores; do
+          if ! printf '%s\n' "$$existing" | grep -q "^$$topic[[:space:]]"; then
+            rpk topic create "$$topic" --partitions 3 --replicas 1 -X brokers=kafka:9092
+          fi
+        done
+        rpk topic list -X brokers=kafka:9092
+    networks: [ml-scorer]
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fraud}
+      POSTGRES_USER: ${POSTGRES_USER:-fraud}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fraud}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [ml-scorer]
+
+  fraud_detector:
+    build: ./fraud_detector
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TRANSACTIONS_TOPIC: transactions
+      KAFKA_SCORING_TOPIC: scores
+      FRAUD_THRESHOLD: ${FRAUD_THRESHOLD:-0.98}
+    depends_on:
+      kafka-setup:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks: [ml-scorer]
+
+  db-writer:
+    build: ./db_writer
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_SCORES_TOPIC: scores
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-fraud}:${POSTGRES_PASSWORD:-fraud}@postgres:5432/${POSTGRES_DB:-fraud}
+    depends_on:
+      kafka-setup:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [ml-scorer]
+
+  interface:
+    build: ./interface
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: transactions
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-fraud}:${POSTGRES_PASSWORD:-fraud}@postgres:5432/${POSTGRES_DB:-fraud}
+    depends_on:
+      kafka-setup:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8501"
+    restart: unless-stopped
+    networks: [ml-scorer]
+
+networks:
+  ml-scorer:
+    name: ml-scorer
+    driver: bridge
+
+volumes:
+  redpanda_data:
+  postgres_data:
